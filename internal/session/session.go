@@ -117,6 +117,18 @@ func swayWindowExists(appID string) bool {
 	return strings.Contains(string(out), fmt.Sprintf(`"app_id":"%s"`, appID))
 }
 
+// IsProcessAlive checks if a process with the given PID is running.
+func IsProcessAlive(pid int) bool {
+	if pid == 0 {
+		return false
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return proc.Signal(syscall.Signal(0)) == nil
+}
+
 // KillProcess sends SIGTERM to a process by PID.
 func KillProcess(pid int) error {
 	if pid == 0 {

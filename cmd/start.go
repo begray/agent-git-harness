@@ -34,9 +34,9 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Check if feature is already tracked in agh
+	// If feature is already tracked, resume dead sessions instead of failing
 	if existing, err := proj.LoadFeature(featureName); err == nil {
-		return fmt.Errorf("feature %q already tracked (worktree: %s); use 'agh stop' first", existing.Name, existing.Worktree)
+		return resumeFeature(proj, existing)
 	}
 
 	wtPath := proj.WorktreePath(featureName)
@@ -113,33 +113,8 @@ func runStart(cmd *cobra.Command, args []string) error {
 		AITool:        proj.Config.AITool,
 	}
 
-	// Spawn terminal with AI tool
-	terminal, err := proj.Config.ResolveTerminal()
-	if err != nil {
-		return err
-	}
-	fmt.Printf("Launching %s in %s terminal...\n", proj.Config.AITool, terminal)
-	termPID, err := session.SpawnTerminal(proj.Config, featureName, wtPath)
-	if err != nil {
-		return fmt.Errorf("spawning terminal: %w", err)
-	}
-	feature.TerminalPID = termPID
-
-	// Arrange in sway if enabled
-	if proj.Config.Sway.Enabled {
-		session.ArrangeSway(proj.Config, featureName)
-	}
-
-	// Launch IDE if detected
-	if ide != "" {
-		fmt.Printf("Launching %s...\n", ide)
-		idePID, err := session.SpawnIDE(wtPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to launch IDE: %v\n", err)
-		} else {
-			feature.IDEPID = idePID
-		}
-	}
+	// Launch all sessions
+	launchSessions(proj, feature)
 
 	if err := proj.SaveFeature(feature); err != nil {
 		return fmt.Errorf("saving feature state: %w", err)
@@ -150,6 +125,75 @@ func runStart(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Based on feature: %s\n", parentFeature)
 	}
 	return nil
+}
+
+// resumeFeature checks which sessions are dead and respawns them.
+func resumeFeature(proj *project.Project, feature *project.Feature) error {
+	fmt.Printf("Resuming feature %q\n", feature.Name)
+
+	termAlive := session.IsProcessAlive(feature.TerminalPID)
+	ideAlive := feature.IDE == "" || session.IsProcessAlive(feature.IDEPID)
+
+	if termAlive && ideAlive {
+		fmt.Println("All sessions already running")
+		return nil
+	}
+
+	if !termAlive {
+		launchTerminal(proj, feature)
+	} else {
+		fmt.Printf("Terminal already running (pid %d)\n", feature.TerminalPID)
+	}
+
+	if !ideAlive {
+		launchIDE(proj, feature)
+	} else if feature.IDE != "" {
+		fmt.Printf("IDE already running (pid %d)\n", feature.IDEPID)
+	}
+
+	return proj.SaveFeature(feature)
+}
+
+// launchSessions spawns terminal, arranges sway, and launches IDE.
+func launchSessions(proj *project.Project, feature *project.Feature) {
+	launchTerminal(proj, feature)
+	if feature.IDE != "" {
+		launchIDE(proj, feature)
+	}
+}
+
+func launchTerminal(proj *project.Project, feature *project.Feature) {
+	terminal, err := proj.Config.ResolveTerminal()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+		return
+	}
+	fmt.Printf("Launching %s in %s terminal...\n", proj.Config.AITool, terminal)
+	termPID, err := session.SpawnTerminal(proj.Config, feature.Name, feature.Worktree)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to launch terminal: %v\n", err)
+		return
+	}
+	feature.TerminalPID = termPID
+
+	if proj.Config.Sway.Enabled {
+		session.ArrangeSway(proj.Config, feature.Name)
+	}
+}
+
+func launchIDE(proj *project.Project, feature *project.Feature) {
+	ide := proj.DetectIDE()
+	if ide == "" {
+		return
+	}
+	feature.IDE = ide
+	fmt.Printf("Launching %s...\n", ide)
+	idePID, err := session.SpawnIDE(feature.Worktree)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to launch IDE: %v\n", err)
+		return
+	}
+	feature.IDEPID = idePID
 }
 
 func findFeatureByWorktree(proj *project.Project, dir string) string {
