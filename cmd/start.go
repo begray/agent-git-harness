@@ -127,8 +127,6 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	// Arrange in sway if enabled
 	if proj.Config.Sway.Enabled {
-		// Give the terminal a moment to create its window
-		time.Sleep(500 * time.Millisecond)
 		session.ArrangeSway(proj.Config, featureName)
 	}
 

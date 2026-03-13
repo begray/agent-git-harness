@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/begray/agh/internal/config"
 )
@@ -61,6 +63,7 @@ func SpawnIDE(worktreeDir string) (int, error) {
 }
 
 // ArrangeSway moves the feature terminal to the right and stacks it.
+// Polls for the window to appear before arranging.
 func ArrangeSway(cfg config.Config, feature string) error {
 	if !cfg.Sway.Enabled {
 		return nil
@@ -68,11 +71,16 @@ func ArrangeSway(cfg config.Config, feature string) error {
 
 	appID := "agh-" + feature
 
+	// Wait for the window to appear in sway's tree
+	if !waitForSwayWindow(appID, 5*time.Second) {
+		fmt.Fprintf(os.Stderr, "warning: sway window %q did not appear within timeout\n", appID)
+		return nil
+	}
+
 	// Move the new window to the right
 	moveCmd := exec.Command("swaymsg", fmt.Sprintf(`[app_id="%s"] move right`, appID))
 	if err := moveCmd.Run(); err != nil {
-		// Non-fatal: window might not be ready yet or sway not available
-		fmt.Fprintf(os.Stderr, "warning: sway move failed (window may not be ready): %v\n", err)
+		fmt.Fprintf(os.Stderr, "warning: sway move failed: %v\n", err)
 		return nil
 	}
 
@@ -83,6 +91,30 @@ func ArrangeSway(cfg config.Config, feature string) error {
 	}
 
 	return nil
+}
+
+// waitForSwayWindow polls sway's tree until a window with the given app_id appears.
+func waitForSwayWindow(appID string, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	interval := 100 * time.Millisecond
+
+	for time.Now().Before(deadline) {
+		if swayWindowExists(appID) {
+			return true
+		}
+		time.Sleep(interval)
+	}
+	return false
+}
+
+// swayWindowExists checks if a window with the given app_id exists in sway's tree.
+func swayWindowExists(appID string) bool {
+	cmd := exec.Command("swaymsg", "-t", "get_tree")
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), fmt.Sprintf(`"app_id":"%s"`, appID))
 }
 
 // KillProcess sends SIGTERM to a process by PID.
