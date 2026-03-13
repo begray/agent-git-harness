@@ -1,10 +1,10 @@
 package session
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 	"syscall"
 	"time"
 
@@ -100,13 +100,8 @@ func ArrangeSway(cfg config.Config, feature string) error {
 // XWayland apps (like wezterm) use window_properties.class, while
 // native Wayland apps use app_id.
 func swaySelector(windowID string) string {
-	cmd := exec.Command("swaymsg", "-t", "get_tree")
-	out, err := cmd.Output()
-	if err != nil {
-		return fmt.Sprintf(`[app_id="%s"]`, windowID)
-	}
-	tree := string(out)
-	if strings.Contains(tree, fmt.Sprintf(`"class":"%s"`, windowID)) {
+	node := findSwayWindow(windowID)
+	if node != nil && node.AppID == "" {
 		return fmt.Sprintf(`[class="%s"]`, windowID)
 	}
 	return fmt.Sprintf(`[app_id="%s"]`, windowID)
@@ -118,7 +113,7 @@ func waitForSwayWindow(windowID string, timeout time.Duration) bool {
 	interval := 100 * time.Millisecond
 
 	for time.Now().Before(deadline) {
-		if swayWindowExists(windowID) {
+		if findSwayWindow(windowID) != nil {
 			return true
 		}
 		time.Sleep(interval)
@@ -126,17 +121,50 @@ func waitForSwayWindow(windowID string, timeout time.Duration) bool {
 	return false
 }
 
-// swayWindowExists checks if a window with the given id exists in sway's tree
-// as either app_id (Wayland native) or class (XWayland).
-func swayWindowExists(windowID string) bool {
+type swayNode struct {
+	AppID            string           `json:"app_id"`
+	WindowProperties *swayWindowProps `json:"window_properties"`
+	Nodes            []swayNode       `json:"nodes"`
+	FloatingNodes    []swayNode       `json:"floating_nodes"`
+}
+
+type swayWindowProps struct {
+	Class string `json:"class"`
+}
+
+// findSwayWindow searches the sway tree for a window matching the given id
+// by either app_id (Wayland native) or window_properties.class (XWayland).
+func findSwayWindow(windowID string) *swayNode {
 	cmd := exec.Command("swaymsg", "-t", "get_tree")
 	out, err := cmd.Output()
 	if err != nil {
-		return false
+		return nil
 	}
-	tree := string(out)
-	return strings.Contains(tree, fmt.Sprintf(`"app_id":"%s"`, windowID)) ||
-		strings.Contains(tree, fmt.Sprintf(`"class":"%s"`, windowID))
+	var root swayNode
+	if err := json.Unmarshal(out, &root); err != nil {
+		return nil
+	}
+	return walkSwayTree(&root, windowID)
+}
+
+func walkSwayTree(node *swayNode, windowID string) *swayNode {
+	if node.AppID == windowID {
+		return node
+	}
+	if node.WindowProperties != nil && node.WindowProperties.Class == windowID {
+		return node
+	}
+	for i := range node.Nodes {
+		if found := walkSwayTree(&node.Nodes[i], windowID); found != nil {
+			return found
+		}
+	}
+	for i := range node.FloatingNodes {
+		if found := walkSwayTree(&node.FloatingNodes[i], windowID); found != nil {
+			return found
+		}
+	}
+	return nil
 }
 
 // IsProcessAlive checks if a process with the given PID is running.
