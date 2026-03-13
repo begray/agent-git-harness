@@ -41,6 +41,15 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	wtPath := proj.WorktreePath(featureName)
 	branchExists := worktree.BranchExists(proj.RootDir, featureName)
+
+	// If branch exists, check if it's already checked out in a worktree
+	// (possibly at a non-standard path)
+	if branchExists {
+		if existingWt := worktree.FindWorktreeForBranch(proj.RootDir, featureName); existingWt != "" {
+			wtPath = existingWt
+		}
+	}
+
 	_, wtErr := os.Stat(wtPath)
 	worktreeExists := wtErr == nil
 
@@ -62,7 +71,6 @@ func runStart(cmd *cobra.Command, args []string) error {
 	case worktreeExists && branchExists:
 		// Attach to existing worktree and branch
 		fmt.Printf("Attaching to existing worktree %s (branch: %s)\n", wtPath, featureName)
-		// Verify it's actually a git worktree with the right branch
 		actualBranch, err := worktree.CurrentBranch(wtPath)
 		if err != nil {
 			return fmt.Errorf("worktree at %s exists but is not a valid git directory: %w", wtPath, err)

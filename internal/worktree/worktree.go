@@ -87,6 +87,28 @@ func CheckoutExisting(projectRoot, path, branch string) error {
 	return nil
 }
 
+// FindWorktreeForBranch returns the worktree path where a branch is checked out,
+// or empty string if the branch is not checked out in any worktree.
+func FindWorktreeForBranch(projectRoot, branch string) string {
+	cmd := exec.Command("git", "worktree", "list", "--porcelain")
+	cmd.Dir = projectRoot
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	var currentPath string
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "worktree ") {
+			currentPath = strings.TrimPrefix(line, "worktree ")
+		}
+		if strings.TrimSpace(line) == "branch refs/heads/"+branch {
+			return currentPath
+		}
+	}
+	return ""
+}
+
 // DeleteBranch deletes a local branch.
 func DeleteBranch(projectRoot, branch string) error {
 	cmd := exec.Command("git", "branch", "-D", branch)
