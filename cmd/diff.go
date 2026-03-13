@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/vvinogradov/agh/internal/project"
-	"github.com/vvinogradov/agh/internal/worktree"
+	"github.com/begray/agh/internal/project"
+	"github.com/begray/agh/internal/worktree"
 )
 
 var diffCmd = &cobra.Command{

@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"syscall"
 
-	"github.com/vvinogradov/agh/internal/config"
+	"github.com/begray/agh/internal/config"
 )
 
 // SpawnTerminal launches a terminal window running the AI tool in the given directory.

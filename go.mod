@@ -1,4 +1,4 @@
-module github.com/vvinogradov/agh
+module github.com/begray/agh
 
 go 1.22.2
 

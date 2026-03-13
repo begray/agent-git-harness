@@ -33,9 +33,41 @@ type AIToolConfig struct {
 	Args    []string `toml:"args"`
 }
 
+// DetectTerminal identifies the current terminal from environment variables.
+// Returns empty string if no known terminal is detected.
+func DetectTerminal() string {
+	// TERM_PROGRAM is the most portable signal
+	switch strings.ToLower(os.Getenv("TERM_PROGRAM")) {
+	case "wezterm":
+		return "wezterm"
+	case "alacritty":
+		return "alacritty"
+	case "foot":
+		return "foot"
+	case "kitty":
+		return "kitty"
+	}
+
+	// Fall back to terminal-specific env vars
+	if os.Getenv("WEZTERM_EXECUTABLE") != "" {
+		return "wezterm"
+	}
+	if os.Getenv("FOOT_SOCK") != "" {
+		return "foot"
+	}
+	if os.Getenv("KITTY_WINDOW_ID") != "" {
+		return "kitty"
+	}
+	if os.Getenv("ALACRITTY_SOCKET") != "" {
+		return "alacritty"
+	}
+
+	return ""
+}
+
 func DefaultConfig() Config {
 	return Config{
-		Terminal: "wezterm",
+		Terminal: "auto",
 		AITool:   "claude",
 		Sway: SwayConfig{
 			Enabled: true,
@@ -53,6 +85,10 @@ func DefaultConfig() Config {
 			"alacritty": {
 				Command: "alacritty",
 				Args:    []string{"--class", "agh-{{feature}}", "-e"},
+			},
+			"kitty": {
+				Command: "kitty",
+				Args:    []string{"--class", "agh-{{feature}}"},
 			},
 		},
 		AITools: map[string]AIToolConfig{
@@ -87,10 +123,26 @@ func Load(aghDir string) (Config, error) {
 	return cfg, nil
 }
 
+// ResolveTerminal returns the effective terminal name, resolving "auto" if needed.
+func (c Config) ResolveTerminal() (string, error) {
+	if c.Terminal != "auto" {
+		return c.Terminal, nil
+	}
+	detected := DetectTerminal()
+	if detected == "" {
+		return "", fmt.Errorf("could not auto-detect terminal (set 'terminal' in config)")
+	}
+	return detected, nil
+}
+
 func (c Config) TerminalArgs(feature string) (string, []string, error) {
-	tc, ok := c.Terminals[c.Terminal]
+	terminal, err := c.ResolveTerminal()
+	if err != nil {
+		return "", nil, err
+	}
+	tc, ok := c.Terminals[terminal]
 	if !ok {
-		return "", nil, fmt.Errorf("unknown terminal %q", c.Terminal)
+		return "", nil, fmt.Errorf("unknown terminal %q (detected or configured); add a [terminals.%s] section to config", terminal, terminal)
 	}
 
 	args := make([]string, len(tc.Args))
@@ -114,8 +166,9 @@ func WriteDefault(path string) error {
 	content := `# agh configuration
 # See: agh --help
 
-# Default terminal emulator
-terminal = "wezterm"
+# Terminal emulator: "auto" detects from environment, or set explicitly
+# Supported: wezterm, foot, alacritty, kitty
+terminal = "auto"
 
 # Default AI coding tool
 ai_tool = "claude"
@@ -136,6 +189,10 @@ args = ["-a", "agh-{{feature}}"]
 [terminals.alacritty]
 command = "alacritty"
 args = ["--class", "agh-{{feature}}", "-e"]
+
+[terminals.kitty]
+command = "kitty"
+args = ["--class", "agh-{{feature}}"]
 
 [ai_tools.claude]
 command = "claude"

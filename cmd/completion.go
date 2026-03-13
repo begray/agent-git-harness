@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
-	"github.com/vvinogradov/agh/internal/project"
+	"github.com/begray/agh/internal/project"
 )
 
 // completeFeatureNames provides tab-completion for feature names.

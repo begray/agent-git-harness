@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
-	"github.com/vvinogradov/agh/internal/config"
-	"github.com/vvinogradov/agh/internal/project"
+	"github.com/begray/agh/internal/config"
+	"github.com/begray/agh/internal/project"
 )
 
 var forceInit bool

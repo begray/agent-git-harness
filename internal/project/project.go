@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vvinogradov/agh/internal/config"
+	"github.com/begray/agh/internal/config"
 )
 
 // Project represents a git project with .agh/ state directory.

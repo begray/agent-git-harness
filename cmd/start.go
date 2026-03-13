@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/vvinogradov/agh/internal/project"
-	"github.com/vvinogradov/agh/internal/session"
-	"github.com/vvinogradov/agh/internal/worktree"
+	"github.com/begray/agh/internal/project"
+	"github.com/begray/agh/internal/session"
+	"github.com/begray/agh/internal/worktree"
 )
 
 var startCmd = &cobra.Command{
@@ -84,7 +84,11 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 
 	// Spawn terminal with AI tool
-	fmt.Printf("Launching %s in %s terminal...\n", proj.Config.AITool, proj.Config.Terminal)
+	terminal, err := proj.Config.ResolveTerminal()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Launching %s in %s terminal...\n", proj.Config.AITool, terminal)
 	termPID, err := session.SpawnTerminal(proj.Config, featureName, wtPath)
 	if err != nil {
 		return fmt.Errorf("spawning terminal: %w", err)
