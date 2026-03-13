@@ -34,14 +34,17 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Check if feature already exists
+	// Check if feature is already tracked in agh
 	if existing, err := proj.LoadFeature(featureName); err == nil {
-		return fmt.Errorf("feature %q already exists (worktree: %s)", existing.Name, existing.Worktree)
+		return fmt.Errorf("feature %q already tracked (worktree: %s); use 'agh stop' first", existing.Name, existing.Worktree)
 	}
 
 	wtPath := proj.WorktreePath(featureName)
+	branchExists := worktree.BranchExists(proj.RootDir, featureName)
+	_, wtErr := os.Stat(wtPath)
+	worktreeExists := wtErr == nil
 
-	// Determine base: if we're in a worktree, that's a parent feature
+	// Determine base branch and parent feature context
 	cwd, _ := os.Getwd()
 	var parentFeature string
 	var baseBranch string
@@ -51,21 +54,40 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
 
-	// If cwd is different from project root, we're in a worktree (parent feature)
 	if cwd != proj.RootDir {
 		parentFeature = findFeatureByWorktree(proj, cwd)
 	}
 
-	// Create worktree with new branch from current HEAD
-	fmt.Printf("Creating worktree %s (branch: %s, base: %s)\n", wtPath, featureName, baseBranch)
-	if parentFeature != "" {
-		// Branch from the parent feature's current HEAD
-		if err := worktree.CreateFromRef(proj.RootDir, wtPath, featureName, baseBranch); err != nil {
+	switch {
+	case worktreeExists && branchExists:
+		// Attach to existing worktree and branch
+		fmt.Printf("Attaching to existing worktree %s (branch: %s)\n", wtPath, featureName)
+		// Verify it's actually a git worktree with the right branch
+		actualBranch, err := worktree.CurrentBranch(wtPath)
+		if err != nil {
+			return fmt.Errorf("worktree at %s exists but is not a valid git directory: %w", wtPath, err)
+		}
+		baseBranch = actualBranch
+
+	case branchExists && !worktreeExists:
+		// Create worktree for existing branch
+		fmt.Printf("Creating worktree %s for existing branch %s\n", wtPath, featureName)
+		if err := worktree.CheckoutExisting(proj.RootDir, wtPath, featureName); err != nil {
 			return err
 		}
-	} else {
-		if err := worktree.Create(proj.RootDir, wtPath, featureName); err != nil {
-			return err
+		baseBranch = featureName
+
+	default:
+		// Create new branch and worktree
+		fmt.Printf("Creating worktree %s (branch: %s, base: %s)\n", wtPath, featureName, baseBranch)
+		if parentFeature != "" {
+			if err := worktree.CreateFromRef(proj.RootDir, wtPath, featureName, baseBranch); err != nil {
+				return err
+			}
+		} else {
+			if err := worktree.Create(proj.RootDir, wtPath, featureName); err != nil {
+				return err
+			}
 		}
 	}
 

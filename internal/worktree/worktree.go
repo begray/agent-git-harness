@@ -68,6 +68,25 @@ func CurrentBranch(dir string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// BranchExists checks if a local branch exists.
+func BranchExists(projectRoot, branch string) bool {
+	cmd := exec.Command("git", "rev-parse", "--verify", "refs/heads/"+branch)
+	cmd.Dir = projectRoot
+	return cmd.Run() == nil
+}
+
+// CheckoutExisting creates a worktree for an existing branch (no -b).
+func CheckoutExisting(projectRoot, path, branch string) error {
+	cmd := exec.Command("git", "worktree", "add", path, branch)
+	cmd.Dir = projectRoot
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git worktree add (existing branch): %w", err)
+	}
+	return nil
+}
+
 // DeleteBranch deletes a local branch.
 func DeleteBranch(projectRoot, branch string) error {
 	cmd := exec.Command("git", "branch", "-D", branch)
