@@ -12,7 +12,7 @@ import (
 // SpawnTerminal launches a terminal window running the AI tool in the given directory.
 // Returns the PID of the terminal process.
 func SpawnTerminal(cfg config.Config, feature, worktreeDir string) (int, error) {
-	termCmd, termArgs, err := cfg.TerminalArgs(feature)
+	termCmd, termArgs, err := cfg.TerminalArgs(feature, worktreeDir)
 	if err != nil {
 		return 0, err
 	}

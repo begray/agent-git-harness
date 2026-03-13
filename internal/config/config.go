@@ -76,7 +76,7 @@ func DefaultConfig() Config {
 		Terminals: map[string]TerminalConfig{
 			"wezterm": {
 				Command: "wezterm",
-				Args:    []string{"start", "--class", "agh-{{feature}}", "--"},
+				Args:    []string{"start", "--class", "agh-{{feature}}", "--cwd", "{{workdir}}", "--"},
 			},
 			"foot": {
 				Command: "foot",
@@ -135,7 +135,7 @@ func (c Config) ResolveTerminal() (string, error) {
 	return detected, nil
 }
 
-func (c Config) TerminalArgs(feature string) (string, []string, error) {
+func (c Config) TerminalArgs(feature, workdir string) (string, []string, error) {
 	terminal, err := c.ResolveTerminal()
 	if err != nil {
 		return "", nil, err
@@ -145,9 +145,10 @@ func (c Config) TerminalArgs(feature string) (string, []string, error) {
 		return "", nil, fmt.Errorf("unknown terminal %q (detected or configured); add a [terminals.%s] section to config", terminal, terminal)
 	}
 
+	replacer := strings.NewReplacer("{{feature}}", feature, "{{workdir}}", workdir)
 	args := make([]string, len(tc.Args))
 	for i, a := range tc.Args {
-		args[i] = strings.ReplaceAll(a, "{{feature}}", feature)
+		args[i] = replacer.Replace(a)
 	}
 
 	return tc.Command, args, nil
@@ -180,7 +181,7 @@ layout = "right-stack"
 
 [terminals.wezterm]
 command = "wezterm"
-args = ["start", "--class", "agh-{{feature}}", "--"]
+args = ["start", "--class", "agh-{{feature}}", "--cwd", "{{workdir}}", "--"]
 
 [terminals.foot]
 command = "foot"
