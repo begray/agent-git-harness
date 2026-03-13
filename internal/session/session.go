@@ -69,23 +69,26 @@ func ArrangeSway(cfg config.Config, feature string) error {
 		return nil
 	}
 
-	appID := "agh-" + feature
+	windowID := "agh-" + feature
 
 	// Wait for the window to appear in sway's tree
-	if !waitForSwayWindow(appID, 5*time.Second) {
-		fmt.Fprintf(os.Stderr, "warning: sway window %q did not appear within timeout\n", appID)
+	if !waitForSwayWindow(windowID, 5*time.Second) {
+		fmt.Fprintf(os.Stderr, "warning: sway window %q did not appear within timeout\n", windowID)
 		return nil
 	}
 
+	// Use class= for XWayland windows (e.g. wezterm), app_id= for native Wayland
+	selector := swaySelector(windowID)
+
 	// Move the new window to the right
-	moveCmd := exec.Command("swaymsg", fmt.Sprintf(`[app_id="%s"] move right`, appID))
+	moveCmd := exec.Command("swaymsg", fmt.Sprintf(`%s move right`, selector))
 	if err := moveCmd.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: sway move failed: %v\n", err)
 		return nil
 	}
 
 	// Set stacking layout on the right container
-	layoutCmd := exec.Command("swaymsg", fmt.Sprintf(`[app_id="%s"] layout stacking`, appID))
+	layoutCmd := exec.Command("swaymsg", fmt.Sprintf(`%s layout stacking`, selector))
 	if err := layoutCmd.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: sway layout failed: %v\n", err)
 	}
@@ -93,13 +96,29 @@ func ArrangeSway(cfg config.Config, feature string) error {
 	return nil
 }
 
-// waitForSwayWindow polls sway's tree until a window with the given app_id appears.
-func waitForSwayWindow(appID string, timeout time.Duration) bool {
+// swaySelector returns the appropriate swaymsg selector for a window.
+// XWayland apps (like wezterm) use window_properties.class, while
+// native Wayland apps use app_id.
+func swaySelector(windowID string) string {
+	cmd := exec.Command("swaymsg", "-t", "get_tree")
+	out, err := cmd.Output()
+	if err != nil {
+		return fmt.Sprintf(`[app_id="%s"]`, windowID)
+	}
+	tree := string(out)
+	if strings.Contains(tree, fmt.Sprintf(`"class":"%s"`, windowID)) {
+		return fmt.Sprintf(`[class="%s"]`, windowID)
+	}
+	return fmt.Sprintf(`[app_id="%s"]`, windowID)
+}
+
+// waitForSwayWindow polls sway's tree until a window with the given id appears.
+func waitForSwayWindow(windowID string, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	interval := 100 * time.Millisecond
 
 	for time.Now().Before(deadline) {
-		if swayWindowExists(appID) {
+		if swayWindowExists(windowID) {
 			return true
 		}
 		time.Sleep(interval)
@@ -107,14 +126,17 @@ func waitForSwayWindow(appID string, timeout time.Duration) bool {
 	return false
 }
 
-// swayWindowExists checks if a window with the given app_id exists in sway's tree.
-func swayWindowExists(appID string) bool {
+// swayWindowExists checks if a window with the given id exists in sway's tree
+// as either app_id (Wayland native) or class (XWayland).
+func swayWindowExists(windowID string) bool {
 	cmd := exec.Command("swaymsg", "-t", "get_tree")
 	out, err := cmd.Output()
 	if err != nil {
 		return false
 	}
-	return strings.Contains(string(out), fmt.Sprintf(`"app_id":"%s"`, appID))
+	tree := string(out)
+	return strings.Contains(tree, fmt.Sprintf(`"app_id":"%s"`, windowID)) ||
+		strings.Contains(tree, fmt.Sprintf(`"class":"%s"`, windowID))
 }
 
 // IsProcessAlive checks if a process with the given PID is running.
