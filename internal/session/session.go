@@ -5,28 +5,41 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/begray/agh/internal/config"
 )
 
+// shellQuote wraps a string in single quotes for safe shell usage.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
 // SpawnTerminal launches a terminal window running the AI tool in the given directory.
+// When resume is true, the AI tool is launched with resume args (e.g. --continue for claude).
 // Returns the PID of the terminal process.
-func SpawnTerminal(cfg config.Config, feature, worktreeDir string) (int, error) {
+func SpawnTerminal(cfg config.Config, feature, worktreeDir string, resume bool) (int, error) {
 	termCmd, termArgs, err := cfg.TerminalArgs(feature, worktreeDir)
 	if err != nil {
 		return 0, err
 	}
 
-	aiCmd, aiArgs, err := cfg.AIToolArgs()
+	aiCmd, aiArgs, err := cfg.AIToolArgs(resume)
 	if err != nil {
 		return 0, err
 	}
 
-	// Terminal args + AI tool command + AI tool args
-	args := append(termArgs, aiCmd)
-	args = append(args, aiArgs...)
+	// Build shell command that runs the AI tool and falls back to a shell on exit
+	shellCmd := aiCmd
+	for _, a := range aiArgs {
+		shellCmd += " " + shellQuote(a)
+	}
+	shellCmd += "; exec $SHELL"
+
+	// Terminal args + shell invocation
+	args := append(termArgs, "bash", "-c", shellCmd)
 
 	cmd := exec.Command(termCmd, args...)
 	cmd.Dir = worktreeDir

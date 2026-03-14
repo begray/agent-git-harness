@@ -113,8 +113,8 @@ func runStart(cmd *cobra.Command, args []string) error {
 		AITool:        proj.Config.AITool,
 	}
 
-	// Launch all sessions
-	launchSessions(proj, feature)
+	// Launch all sessions (fresh start, no --continue)
+	launchSessions(proj, feature, false)
 
 	if err := proj.SaveFeature(feature); err != nil {
 		return fmt.Errorf("saving feature state: %w", err)
@@ -140,7 +140,7 @@ func resumeFeature(proj *project.Project, feature *project.Feature) error {
 	}
 
 	if !termAlive {
-		launchTerminal(proj, feature)
+		launchTerminal(proj, feature, true)
 	} else {
 		fmt.Printf("Terminal already running (pid %d)\n", feature.TerminalPID)
 	}
@@ -155,21 +155,21 @@ func resumeFeature(proj *project.Project, feature *project.Feature) error {
 }
 
 // launchSessions spawns terminal, arranges sway, and launches IDE.
-func launchSessions(proj *project.Project, feature *project.Feature) {
-	launchTerminal(proj, feature)
+func launchSessions(proj *project.Project, feature *project.Feature, resume bool) {
+	launchTerminal(proj, feature, resume)
 	if feature.IDE != "" {
 		launchIDE(proj, feature)
 	}
 }
 
-func launchTerminal(proj *project.Project, feature *project.Feature) {
+func launchTerminal(proj *project.Project, feature *project.Feature, resume bool) {
 	terminal, err := proj.Config.ResolveTerminal()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 		return
 	}
 	fmt.Printf("Launching %s in %s terminal...\n", proj.Config.AITool, terminal)
-	termPID, err := session.SpawnTerminal(proj.Config, feature.Name, feature.Worktree)
+	termPID, err := session.SpawnTerminal(proj.Config, feature.Name, feature.Worktree, resume)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to launch terminal: %v\n", err)
 		return

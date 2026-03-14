@@ -29,8 +29,9 @@ type TerminalConfig struct {
 }
 
 type AIToolConfig struct {
-	Command string   `toml:"command"`
-	Args    []string `toml:"args"`
+	Command    string   `toml:"command"`
+	Args       []string `toml:"args"`
+	ResumeArgs []string `toml:"resume_args"`
 }
 
 // DetectTerminal identifies the current terminal from environment variables.
@@ -95,6 +96,7 @@ func DefaultConfig() Config {
 			"claude": {
 				Command: "claude",
 				Args:    []string{},
+				ResumeArgs: []string{"--continue"},
 			},
 			"aider": {
 				Command: "aider",
@@ -154,10 +156,14 @@ func (c Config) TerminalArgs(feature, workdir string) (string, []string, error) 
 	return tc.Command, args, nil
 }
 
-func (c Config) AIToolArgs() (string, []string, error) {
+func (c Config) AIToolArgs(resume bool) (string, []string, error) {
 	at, ok := c.AITools[c.AITool]
 	if !ok {
 		return "", nil, fmt.Errorf("unknown ai tool %q", c.AITool)
+	}
+	if resume && len(at.ResumeArgs) > 0 {
+		args := append(at.Args[:len(at.Args):len(at.Args)], at.ResumeArgs...)
+		return at.Command, args, nil
 	}
 	return at.Command, at.Args, nil
 }
@@ -198,6 +204,7 @@ args = ["--class", "agh-{{feature}}"]
 [ai_tools.claude]
 command = "claude"
 args = []
+resume_args = ["--continue"]
 
 [ai_tools.aider]
 command = "aider"
