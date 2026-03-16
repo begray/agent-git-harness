@@ -168,6 +168,15 @@ func (c Config) AIToolArgs(resume bool) (string, []string, error) {
 	return at.Command, at.Args, nil
 }
 
+// AIToolBaseArgs returns the AI tool command and base args (without resume args).
+func (c Config) AIToolBaseArgs() ([]string, error) {
+	at, ok := c.AITools[c.AITool]
+	if !ok {
+		return nil, fmt.Errorf("unknown ai tool %q", c.AITool)
+	}
+	return at.Args, nil
+}
+
 // WriteDefault writes the default config as a commented TOML file.
 func WriteDefault(path string) error {
 	content := `# agh configuration

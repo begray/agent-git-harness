@@ -31,10 +31,19 @@ func SpawnTerminal(cfg config.Config, feature, worktreeDir string, resume bool) 
 		return 0, err
 	}
 
-	// Build shell command that runs the AI tool and falls back to a shell on exit
+	// Build shell command that runs the AI tool and falls back to a shell on exit.
+	// When resuming, try with resume args first, fall back to plain invocation.
 	shellCmd := aiCmd
 	for _, a := range aiArgs {
 		shellCmd += " " + shellQuote(a)
+	}
+	if resume {
+		baseCmd := aiCmd
+		baseArgs, _ := cfg.AIToolBaseArgs()
+		for _, a := range baseArgs {
+			baseCmd += " " + shellQuote(a)
+		}
+		shellCmd += " || " + baseCmd
 	}
 	shellCmd += "; exec $SHELL"
 
