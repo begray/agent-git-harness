@@ -45,16 +45,15 @@ func Remove(projectRoot, path string) error {
 	return nil
 }
 
-// Diff runs git diff in the given worktree directory and returns the output.
-func Diff(worktreePath string, args ...string) (string, error) {
+// Diff runs git diff in the given worktree directory, inheriting stdout/stderr
+// so that color and pager work as if the user ran git diff directly.
+func Diff(worktreePath string, args ...string) error {
 	gitArgs := append([]string{"diff"}, args...)
 	cmd := exec.Command("git", gitArgs...)
 	cmd.Dir = worktreePath
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("git diff: %w\n%s", err, out)
-	}
-	return string(out), nil
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 // CurrentBranch returns the current branch name in the given directory.

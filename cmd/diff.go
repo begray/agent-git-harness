@@ -3,9 +3,9 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/spf13/cobra"
 	"github.com/begray/agh/internal/project"
 	"github.com/begray/agh/internal/worktree"
+	"github.com/spf13/cobra"
 )
 
 var diffCmd = &cobra.Command{
@@ -33,11 +33,5 @@ func runDiff(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("feature %q not found: %w", featureName, err)
 	}
 
-	output, err := worktree.Diff(feature.Worktree, extraArgs...)
-	if err != nil {
-		return err
-	}
-
-	fmt.Print(output)
-	return nil
+	return worktree.Diff(feature.Worktree, extraArgs...)
 }
