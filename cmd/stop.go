@@ -44,10 +44,17 @@ func runStop(cmd *cobra.Command, args []string) error {
 		session.KillProcess(feature.TerminalPID)
 	}
 
-	// Kill IDE process
-	if feature.IDEPID != 0 {
-		fmt.Printf("Stopping IDE (PID %d)...\n", feature.IDEPID)
-		session.KillProcess(feature.IDEPID)
+	// Kill IDE process: find by worktree path since the "idea" launcher
+	// exits immediately and the stored PID goes stale.
+	if feature.IDE != "" {
+		if idePID, err := session.FindIDEProcess(feature.Worktree); err == nil {
+			fmt.Printf("Stopping IDE (PID %d)...\n", idePID)
+			session.KillProcess(idePID)
+		} else if feature.IDEPID != 0 {
+			// Fall back to stored PID
+			fmt.Printf("Stopping IDE (PID %d)...\n", feature.IDEPID)
+			session.KillProcess(feature.IDEPID)
+		}
 	}
 
 	// Remove worktree

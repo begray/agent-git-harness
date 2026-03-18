@@ -132,7 +132,7 @@ func resumeFeature(proj *project.Project, feature *project.Feature) error {
 	fmt.Printf("Resuming feature %q\n", feature.Name)
 
 	termAlive := session.IsProcessAlive(feature.TerminalPID)
-	ideAlive := feature.IDE == "" || session.IsProcessAlive(feature.IDEPID)
+	ideAlive := feature.IDE == "" || session.IsIDEAlive(feature.Worktree)
 
 	if termAlive && ideAlive {
 		fmt.Println("All sessions already running")

@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/begray/agh/internal/project"
+	"github.com/begray/agh/internal/session"
 	"github.com/begray/agh/internal/worktree"
 )
 
@@ -53,7 +54,11 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		termStatus := processStatus(f.TerminalPID)
 		ideStatus := "-"
 		if f.IDE != "" {
-			ideStatus = processStatus(f.IDEPID)
+			if idePID, err := session.FindIDEProcess(f.Worktree); err == nil {
+				ideStatus = fmt.Sprintf("running (pid %d)", idePID)
+			} else {
+				ideStatus = fmt.Sprintf("dead (pid %d)", f.IDEPID)
+			}
 		}
 		wtStatus := worktreeStatus(f.Worktree)
 		branchStatus := branchStatus(proj.RootDir, f)
