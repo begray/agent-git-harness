@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/begray/agh/internal/config"
+	"github.com/begray/agh/internal/layout"
 )
 
 // Project represents a git project with .agh/ state directory.
@@ -30,8 +31,9 @@ type Feature struct {
 	ParentFeature string    `json:"parent_feature,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 	IDE           string    `json:"ide,omitempty"`
-	AITool        string    `json:"ai_tool"`
-	TerminalPID   int       `json:"terminal_pid,omitempty"`
+	AITool        string               `json:"ai_tool"`
+	Session       layout.SessionHandle `json:"session,omitempty"`
+	TerminalPID   int                  `json:"terminal_pid,omitempty"` // Deprecated: use Session
 	IDEPID        int       `json:"ide_pid,omitempty"`
 }
 
@@ -178,6 +180,12 @@ func (p *Project) LoadFeature(name string) (*Feature, error) {
 	if err := json.Unmarshal(data, &f); err != nil {
 		return nil, fmt.Errorf("parsing feature %q: %w", name, err)
 	}
+
+	// Migrate old terminal_pid to session handle
+	if f.Session.Type == "" && f.TerminalPID != 0 {
+		f.Session = layout.SessionHandle{Type: "pid", PID: f.TerminalPID}
+	}
+
 	return &f, nil
 }
 

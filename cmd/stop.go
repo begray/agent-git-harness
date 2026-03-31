@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/begray/agh/internal/layout"
 	"github.com/begray/agh/internal/project"
 	"github.com/begray/agh/internal/session"
 	"github.com/begray/agh/internal/worktree"
@@ -38,8 +39,15 @@ func runStop(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("feature %q not found: %w", featureName, err)
 	}
 
-	// Kill terminal process
-	if feature.TerminalPID != 0 {
+	// Kill AI session
+	if feature.Session.Type != "" {
+		fmt.Printf("Stopping AI session (%s)...\n", feature.Session.Type)
+		mgr, err := layout.NewForHandle(feature.Session, proj.Config)
+		if err == nil {
+			mgr.Kill(feature.Session)
+		}
+	} else if feature.TerminalPID != 0 {
+		// Legacy: no session handle, fall back to PID
 		fmt.Printf("Stopping terminal (PID %d)...\n", feature.TerminalPID)
 		session.KillProcess(feature.TerminalPID)
 	}

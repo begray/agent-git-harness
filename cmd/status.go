@@ -7,6 +7,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	"github.com/begray/agh/internal/config"
+	"github.com/begray/agh/internal/layout"
 	"github.com/begray/agh/internal/project"
 	"github.com/begray/agh/internal/session"
 	"github.com/begray/agh/internal/worktree"
@@ -49,9 +51,9 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "FEATURE\tTERMINAL\tIDE\tWORKTREE\tBRANCH")
+	fmt.Fprintln(w, "FEATURE\tLAYOUT\tAI SESSION\tIDE\tWORKTREE\tBRANCH")
 	for _, f := range features {
-		termStatus := processStatus(f.TerminalPID)
+		termStatus := sessionStatus(f, proj.Config)
 		ideStatus := "-"
 		if f.IDE != "" {
 			if idePID, err := session.FindIDEProcess(f.Worktree); err == nil {
@@ -63,8 +65,13 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		wtStatus := worktreeStatus(f.Worktree)
 		branchStatus := branchStatus(proj.RootDir, f)
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-			f.Name, termStatus, ideStatus, wtStatus, branchStatus,
+		layoutType := f.Session.Type
+		if layoutType == "" {
+			layoutType = "-"
+		}
+
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			f.Name, layoutType, termStatus, ideStatus, wtStatus, branchStatus,
 		)
 	}
 	w.Flush()
@@ -110,4 +117,22 @@ func branchStatus(projectRoot string, f *project.Feature) string {
 		return fmt.Sprintf("diverged (%s)", branch)
 	}
 	return branch
+}
+
+func sessionStatus(f *project.Feature, cfg config.Config) string {
+	if f.Session.Type != "" {
+		mgr, err := layout.NewForHandle(f.Session, cfg)
+		if err != nil {
+			return "error"
+		}
+		if mgr.IsAlive(f.Session) {
+			if f.Session.PaneID != "" {
+				return fmt.Sprintf("running (%s)", f.Session.PaneID)
+			}
+			return fmt.Sprintf("running (pid %d)", f.Session.PID)
+		}
+		return "dead"
+	}
+	// Legacy fallback
+	return processStatus(f.TerminalPID)
 }

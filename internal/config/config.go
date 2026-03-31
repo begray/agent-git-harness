@@ -12,15 +12,37 @@ import (
 type Config struct {
 	Terminal string     `toml:"terminal"`
 	AITool   string     `toml:"ai_tool"`
-	Sway     SwayConfig `toml:"sway"`
+	Layout   string     `toml:"layout"` // "auto", "tmux", "zellij", "sway", "none"
 
-	Terminals map[string]TerminalConfig `toml:"terminals"`
-	AITools   map[string]AIToolConfig   `toml:"ai_tools"`
+	// Deprecated: use Layout instead. Kept for backward compat.
+	Sway SwayConfig `toml:"sway"`
+
+	Terminals     map[string]TerminalConfig `toml:"terminals"`
+	AITools       map[string]AIToolConfig   `toml:"ai_tools"`
+	LayoutOptions LayoutOptionsConfig       `toml:"layout_options"`
 }
 
 type SwayConfig struct {
 	Enabled bool   `toml:"enabled"`
 	Layout  string `toml:"layout"`
+}
+
+type LayoutOptionsConfig struct {
+	Sway   SwayLayoutConfig   `toml:"sway"`
+	Tmux   TmuxLayoutConfig   `toml:"tmux"`
+	Zellij ZellijLayoutConfig `toml:"zellij"`
+}
+
+type SwayLayoutConfig struct {
+	Arrange string `toml:"arrange"`
+}
+
+type TmuxLayoutConfig struct {
+	SessionName string `toml:"session_name"`
+}
+
+type ZellijLayoutConfig struct {
+	// Reserved for future options
 }
 
 type TerminalConfig struct {
@@ -70,9 +92,18 @@ func DefaultConfig() Config {
 	return Config{
 		Terminal: "auto",
 		AITool:   "claude",
+		Layout:   "auto",
 		Sway: SwayConfig{
-			Enabled: true,
+			Enabled: false,
 			Layout:  "right-stack",
+		},
+		LayoutOptions: LayoutOptionsConfig{
+			Sway: SwayLayoutConfig{
+				Arrange: "right-stack",
+			},
+			Tmux: TmuxLayoutConfig{
+				SessionName: "agh",
+			},
 		},
 		Terminals: map[string]TerminalConfig{
 			"wezterm": {
@@ -137,6 +168,32 @@ func (c Config) ResolveTerminal() (string, error) {
 	return detected, nil
 }
 
+
+// ResolveLayout returns the effective layout manager name.
+// Handles "auto" detection and backward compat with [sway] config.
+func (c Config) ResolveLayout() string {
+	if c.Layout != "" && c.Layout != "auto" {
+		return c.Layout
+	}
+	// Backward compat: if layout not set but sway.enabled is explicit
+	if c.Layout == "" && c.Sway.Enabled {
+		return "sway"
+	}
+	if c.Layout == "auto" || c.Layout == "" {
+		if os.Getenv("TMUX") != "" {
+			return "tmux"
+		}
+		if os.Getenv("ZELLIJ") != "" {
+			return "zellij"
+		}
+		if os.Getenv("SWAYSOCK") != "" {
+			return "sway"
+		}
+		return "terminal"
+	}
+	return "terminal"
+}
+
 func (c Config) TerminalArgs(feature, workdir string) (string, []string, error) {
 	terminal, err := c.ResolveTerminal()
 	if err != nil {
@@ -184,15 +241,27 @@ func WriteDefault(path string) error {
 
 # Terminal emulator: "auto" detects from environment, or set explicitly
 # Supported: wezterm, foot, alacritty, kitty
+# Only used with layout = "sway" or "terminal" (tmux/zellij manage their own panes)
 terminal = "auto"
 
 # Default AI coding tool
 ai_tool = "claude"
 
-[sway]
-# Enable sway window management (move feature terminals to the right, stack them)
-enabled = true
-layout = "right-stack"
+# Layout manager: "auto" detects from environment, or set explicitly
+# Supported: auto, tmux, zellij, sway, none
+# auto detection: $TMUX → tmux, $ZELLIJ → zellij, $SWAYSOCK → sway, else → terminal
+layout = "auto"
+
+[layout_options.tmux]
+session_name = "agh"
+
+[layout_options.sway]
+arrange = "right-stack"
+
+# Deprecated: use layout = "sway" instead
+# [sway]
+# enabled = true
+# layout = "right-stack"
 
 [terminals.wezterm]
 command = "wezterm"

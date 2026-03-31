@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/begray/agh/internal/layout"
 	"github.com/begray/agh/internal/project"
 	"github.com/begray/agh/internal/session"
 	"github.com/begray/agh/internal/worktree"
@@ -131,7 +132,12 @@ func runStart(cmd *cobra.Command, args []string) error {
 func resumeFeature(proj *project.Project, feature *project.Feature) error {
 	fmt.Printf("Resuming feature %q\n", feature.Name)
 
-	termAlive := session.IsProcessAlive(feature.TerminalPID)
+	mgr, err := layout.New(proj.Config)
+	if err != nil {
+		return fmt.Errorf("creating layout manager: %w", err)
+	}
+
+	termAlive := mgr.IsAlive(feature.Session)
 	ideAlive := feature.IDE == "" || session.IsIDEAlive(feature.Worktree)
 
 	if termAlive && ideAlive {
@@ -140,9 +146,9 @@ func resumeFeature(proj *project.Project, feature *project.Feature) error {
 	}
 
 	if !termAlive {
-		launchTerminal(proj, feature, true)
+		launchAISession(proj, feature, mgr, true)
 	} else {
-		fmt.Printf("Terminal already running (pid %d)\n", feature.TerminalPID)
+		fmt.Println("AI session already running")
 	}
 
 	if !ideAlive {
@@ -154,31 +160,34 @@ func resumeFeature(proj *project.Project, feature *project.Feature) error {
 	return proj.SaveFeature(feature)
 }
 
-// launchSessions spawns terminal, arranges sway, and launches IDE.
+// launchSessions spawns the AI tool session and optionally an IDE.
 func launchSessions(proj *project.Project, feature *project.Feature, resume bool) {
-	launchTerminal(proj, feature, resume)
+	mgr, err := layout.New(proj.Config)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+		return
+	}
+	launchAISession(proj, feature, mgr, resume)
 	if feature.IDE != "" {
 		launchIDE(proj, feature)
 	}
 }
 
-func launchTerminal(proj *project.Project, feature *project.Feature, resume bool) {
-	terminal, err := proj.Config.ResolveTerminal()
+func launchAISession(proj *project.Project, feature *project.Feature, mgr layout.Manager, resume bool) {
+	shellCmd, err := layout.BuildShellCmd(proj.Config, resume)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 		return
 	}
-	fmt.Printf("Launching %s in %s terminal...\n", proj.Config.AITool, terminal)
-	termPID, err := session.SpawnTerminal(proj.Config, feature.Name, feature.Worktree, resume)
+
+	fmt.Printf("Launching %s via %s...\n", proj.Config.AITool, mgr.Name())
+	handle, err := mgr.Start(feature.Name, feature.Worktree, shellCmd)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: failed to launch terminal: %v\n", err)
+		fmt.Fprintf(os.Stderr, "warning: failed to launch AI session: %v\n", err)
 		return
 	}
-	feature.TerminalPID = termPID
-
-	if proj.Config.Sway.Enabled {
-		session.ArrangeSway(proj.Config, feature.Name)
-	}
+	feature.Session = handle
+	feature.TerminalPID = handle.PID // backward compat
 }
 
 func launchIDE(proj *project.Project, feature *project.Feature) {
