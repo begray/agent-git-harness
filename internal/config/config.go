@@ -132,8 +132,8 @@ func DefaultConfig() Config {
 				Args:    []string{},
 				ResumeArgs: []string{"--continue"},
 			},
-			"aider": {
-				Command: "aider",
+			"pi": {
+				Command: "pi",
 				Args:    []string{},
 			},
 		},
@@ -287,14 +287,14 @@ command = "claude"
 args = []
 resume_args = ["--continue"]
 
-[ai_tools.aider]
-command = "aider"
+[ai_tools.pi]
+command = "pi"
 args = []
 
 # Sandbox: greywall-based isolation for AI agent sessions.
 # Greywall provides deny-by-default filesystem access, network filtering via
 # greyproxy (with credential substitution), Landlock, seccomp, and eBPF monitoring.
-# Built-in profiles for claude, pi, opencode, aider handle agent-specific paths.
+# Built-in profiles for claude, pi, opencode handle agent-specific paths.
 # Requires greywall: https://github.com/GreyhavenHQ/greywall
 # Requires greyproxy for network access: run "greywall setup"
 [sandbox]
