@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/begray/agh/internal/layout"
+	"github.com/begray/agh/internal/sandbox"
 	"github.com/begray/agh/internal/project"
 	"github.com/begray/agh/internal/session"
 	"github.com/begray/agh/internal/worktree"
@@ -178,6 +179,15 @@ func launchAISession(proj *project.Project, feature *project.Feature, mgr layout
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 		return
+	}
+
+	if proj.Config.Sandbox.Enabled {
+		shellCmd, err = sandbox.WrapShellCmd(shellCmd, feature.Worktree, proj.RootDir, proj.Config.AITool, proj.Config.Sandbox)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: sandbox disabled: %v\n", err)
+		} else {
+			fmt.Println("Sandbox: enabled (greywall)")
+		}
 	}
 
 	fmt.Printf("Launching %s via %s...\n", proj.Config.AITool, mgr.Name())

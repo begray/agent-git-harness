@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/begray/agh/internal/sandbox"
 )
 
 type Config struct {
@@ -20,6 +21,7 @@ type Config struct {
 	Terminals     map[string]TerminalConfig `toml:"terminals"`
 	AITools       map[string]AIToolConfig   `toml:"ai_tools"`
 	LayoutOptions LayoutOptionsConfig       `toml:"layout_options"`
+	Sandbox       sandbox.SandboxConfig     `toml:"sandbox"`
 }
 
 type SwayConfig struct {
@@ -90,6 +92,7 @@ func DetectTerminal() string {
 
 func DefaultConfig() Config {
 	return Config{
+		Sandbox: sandbox.DefaultSandboxConfig(),
 		Terminal: "auto",
 		AITool:   "claude",
 		Layout:   "auto",
@@ -129,8 +132,8 @@ func DefaultConfig() Config {
 				Args:    []string{},
 				ResumeArgs: []string{"--continue"},
 			},
-			"aider": {
-				Command: "aider",
+			"pi": {
+				Command: "pi",
 				Args:    []string{},
 			},
 		},
@@ -260,7 +263,7 @@ arrange = "right-stack"
 
 # Deprecated: use layout = "sway" instead
 # [sway]
-# enabled = true
+# enabled = false
 # layout = "right-stack"
 
 [terminals.wezterm]
@@ -284,9 +287,31 @@ command = "claude"
 args = []
 resume_args = ["--continue"]
 
-[ai_tools.aider]
-command = "aider"
+[ai_tools.pi]
+command = "pi"
 args = []
+
+# Sandbox: greywall-based isolation for AI agent sessions.
+# Greywall provides deny-by-default filesystem access, network filtering via
+# greyproxy (with credential substitution), Landlock, seccomp, and eBPF monitoring.
+# Built-in profiles for claude, pi, opencode handle agent-specific paths.
+# Requires greywall: https://github.com/GreyhavenHQ/greywall
+# Requires greyproxy for network access: run "greywall setup"
+[sandbox]
+enabled = false
+
+# Additional paths the agent needs read access to (beyond the built-in profile).
+# extra_ro_paths = ["/data/shared-libs"]
+
+# Additional paths the agent needs write access to.
+# extra_rw_paths = ["/var/run/docker.sock"]
+
+# Additional deny-read rules on top of the built-in profile defaults.
+# extra_deny_read = ["~/.vault-token", "~/.config/CorpTool"]
+
+# Filenames to scan for in ancestor directories (worktree up to $HOME).
+# Found files are added to allowRead so agents can read layered project context.
+context_files = ["AGENTS.md", "CLAUDE.md", ".claude/settings.json"]
 `
 	return os.WriteFile(path, []byte(content), 0o644)
 }
