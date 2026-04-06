@@ -135,28 +135,57 @@ func DefaultConfig() Config {
 			"pi": {
 				Command: "pi",
 				Args:    []string{},
+				ResumeArgs: []string{"--continue"},
 			},
 		},
 	}
 }
 
+// GlobalConfigDir returns the directory for the global agh config.
+// Uses $XDG_CONFIG_HOME/agh or ~/.config/agh as fallback.
+func GlobalConfigDir() string {
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return filepath.Join(xdg, "agh")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "agh")
+}
+
+// GlobalConfigPath returns the path to the global config file.
+func GlobalConfigPath() string {
+	return filepath.Join(GlobalConfigDir(), "config.toml")
+}
+
 func Load(aghDir string) (Config, error) {
 	cfg := DefaultConfig()
-	configPath := filepath.Join(aghDir, "config.toml")
 
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return cfg, nil
-		}
-		return cfg, fmt.Errorf("reading config: %w", err)
+	// Layer 1: global config (~/.config/agh/config.toml)
+	if err := loadLayer(&cfg, GlobalConfigPath()); err != nil {
+		return cfg, fmt.Errorf("global config: %w", err)
 	}
 
-	if err := toml.Unmarshal(data, &cfg); err != nil {
-		return cfg, fmt.Errorf("parsing config: %w", err)
+	// Layer 2: project config (.agh/config.toml)
+	if err := loadLayer(&cfg, filepath.Join(aghDir, "config.toml")); err != nil {
+		return cfg, fmt.Errorf("project config: %w", err)
 	}
 
 	return cfg, nil
+}
+
+// loadLayer reads a TOML file and merges it into the config.
+// Missing files are silently skipped.
+func loadLayer(cfg *Config, path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("reading %s: %w", path, err)
+	}
+	if err := toml.Unmarshal(data, cfg); err != nil {
+		return fmt.Errorf("parsing %s: %w", path, err)
+	}
+	return nil
 }
 
 // ResolveTerminal returns the effective terminal name, resolving "auto" if needed.
@@ -239,21 +268,22 @@ func (c Config) AIToolBaseArgs() ([]string, error) {
 
 // WriteDefault writes the default config as a commented TOML file.
 func WriteDefault(path string) error {
-	content := `# agh configuration
+	content := `# agh project configuration
+# Overrides global config (~/.config/agh/config.toml) and built-in defaults.
 # See: agh --help
 
 # Terminal emulator: "auto" detects from environment, or set explicitly
 # Supported: wezterm, foot, alacritty, kitty
 # Only used with layout = "sway" or "terminal" (tmux/zellij manage their own panes)
-terminal = "auto"
+# terminal = "auto"
 
-# Default AI coding tool
-ai_tool = "claude"
+# Default AI coding tool (uncomment to override global config)
+# ai_tool = "claude"
 
 # Layout manager: "auto" detects from environment, or set explicitly
 # Supported: auto, tmux, zellij, sway, none
 # auto detection: $TMUX → tmux, $ZELLIJ → zellij, $SWAYSOCK → sway, else → terminal
-layout = "auto"
+# layout = "auto"
 
 [layout_options.tmux]
 session_name = "agh"
@@ -290,6 +320,7 @@ resume_args = ["--continue"]
 [ai_tools.pi]
 command = "pi"
 args = []
+resume_args = ["--continue"]
 
 # Sandbox: greywall-based isolation for AI agent sessions.
 # Greywall provides deny-by-default filesystem access, network filtering via
@@ -312,6 +343,32 @@ enabled = false
 # Filenames to scan for in ancestor directories (worktree up to $HOME).
 # Found files are added to allowRead so agents can read layered project context.
 context_files = ["AGENTS.md", "CLAUDE.md", ".claude/settings.json"]
+`
+	return os.WriteFile(path, []byte(content), 0o644)
+}
+
+// WriteGlobalDefault writes a minimal global config template.
+// Global config sets personal defaults that apply to all projects.
+// Project-level .agh/config.toml overrides these values.
+func WriteGlobalDefault(path string) error {
+	content := `# agh global configuration (~/.config/agh/config.toml)
+# Personal defaults applied to all projects.
+# Project-level .agh/config.toml overrides these values.
+
+# Default AI coding tool: "claude", "pi", etc.
+# ai_tool = "claude"
+
+# Terminal emulator: "auto", "wezterm", "foot", "alacritty", "kitty"
+# terminal = "auto"
+
+# Layout manager: "auto", "tmux", "zellij", "sway", "none"
+# layout = "auto"
+
+# You can also define custom AI tools or override built-in ones:
+# [ai_tools.my-tool]
+# command = "my-tool"
+# args = []
+# resume_args = ["--continue"]
 `
 	return os.WriteFile(path, []byte(content), 0o644)
 }
