@@ -2,16 +2,37 @@ package session
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 )
 
 // SpawnIDE launches IntelliJ IDEA for the given worktree directory.
-// Returns the PID of the IDEA process.
+// If IDEA is already running, it opens the project in the existing instance
+// via the JetBrains Toolbox protocol handler, avoiding the DirectoryLock
+// conflict introduced in recent IDEA versions.
+// Returns the PID of the IDEA process (existing or newly spawned).
 func SpawnIDE(worktreeDir string) (int, error) {
-	cmd := exec.Command("idea", worktreeDir)
+	absDir, err := filepath.Abs(worktreeDir)
+	if err != nil {
+		absDir = worktreeDir
+	}
+
+	// If IDEA is already running, open the project in the existing instance.
+	// Recent IDEA versions use a DirectoryLock with a Unix domain socket for
+	// IPC. When the socket goes stale (e.g. after an update), spawning a new
+	// `idea` process fails. The Toolbox protocol handler bypasses this.
+	if existingPID := findAnyIDEProcess(); existingPID > 0 {
+		if err := openInRunningIDE(absDir); err != nil {
+			return 0, fmt.Errorf("IDEA is already running (pid %d), but could not open project: %w\nTry opening %s manually in IDEA", existingPID, err, absDir)
+		}
+		return existingPID, nil
+	}
+
+	cmd := exec.Command("idea", absDir)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true,
 	}
@@ -23,6 +44,48 @@ func SpawnIDE(worktreeDir string) (int, error) {
 	go cmd.Wait()
 
 	return cmd.Process.Pid, nil
+}
+
+// openInRunningIDE opens a project in an already-running IDEA instance
+// using the JetBrains Toolbox protocol handler (jetbrains://idea/...).
+// This avoids the DirectoryLock socket issue by delegating to the Toolbox
+// daemon which has its own IPC mechanism with the running IDE.
+func openInRunningIDE(projectDir string) error {
+	uri := fmt.Sprintf("jetbrains://idea/navigate/reference?project=%s", url.QueryEscape(projectDir))
+	cmd := exec.Command("xdg-open", uri)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("xdg-open jetbrains:// URI: %w", err)
+	}
+	return nil
+}
+
+// findAnyIDEProcess searches /proc for any running IntelliJ IDEA JVM process.
+// Returns the PID if found, 0 otherwise.
+func findAnyIDEProcess() int {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return 0
+	}
+
+	for _, entry := range entries {
+		pid := 0
+		if _, err := fmt.Sscanf(entry.Name(), "%d", &pid); err != nil {
+			continue
+		}
+
+		cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+		if err != nil {
+			continue
+		}
+
+		args := string(cmdline)
+		if strings.Contains(args, "com.intellij.idea.Main") {
+			return pid
+		}
+	}
+
+	return 0
 }
 
 // IsIDEAlive checks whether an IDEA instance is running for the given
