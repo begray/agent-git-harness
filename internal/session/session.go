@@ -2,7 +2,6 @@ package session
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,31 +10,25 @@ import (
 )
 
 // SpawnIDE launches IntelliJ IDEA for the given worktree directory.
-// If IDEA is already running, it opens the project in the existing instance
-// via the JetBrains Toolbox protocol handler, avoiding the DirectoryLock
-// conflict introduced in recent IDEA versions.
-// Returns the PID of the IDEA process (existing or newly spawned).
+// The Toolbox `idea` launcher handles both cases: if IDEA is already running,
+// it opens the project in the existing instance; otherwise it starts a new one.
+// Returns the PID of the launcher process.
 func SpawnIDE(worktreeDir string) (int, error) {
 	absDir, err := filepath.Abs(worktreeDir)
 	if err != nil {
 		absDir = worktreeDir
 	}
 
-	// If IDEA is already running, open the project in the existing instance.
-	// Recent IDEA versions use a DirectoryLock with a Unix domain socket for
-	// IPC. When the socket goes stale (e.g. after an update), spawning a new
-	// `idea` process fails. The Toolbox protocol handler bypasses this.
-	if existingPID := findAnyIDEProcess(); existingPID > 0 {
-		if err := openInRunningIDE(absDir); err != nil {
-			return 0, fmt.Errorf("IDEA is already running (pid %d), but could not open project: %w\nTry opening %s manually in IDEA", existingPID, err, absDir)
-		}
-		return existingPID, nil
-	}
-
 	cmd := exec.Command("idea", absDir)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true,
 	}
+	// Strip snap environment variables that remap XDG paths. When agh runs
+	// inside a snap terminal (e.g. alacritty), XDG_CACHE_HOME points to the
+	// snap sandbox directory. IDEA uses XDG_CACHE_HOME to locate its IPC
+	// socket, so it fails to find the already-running instance and tries to
+	// start a second one, hitting the DirectoryLock error.
+	cmd.Env = cleanSnapEnv()
 
 	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("starting IDEA: %w", err)
@@ -46,18 +39,28 @@ func SpawnIDE(worktreeDir string) (int, error) {
 	return cmd.Process.Pid, nil
 }
 
-// openInRunningIDE opens a project in an already-running IDEA instance
-// using the JetBrains Toolbox protocol handler (jetbrains://idea/...).
-// This avoids the DirectoryLock socket issue by delegating to the Toolbox
-// daemon which has its own IPC mechanism with the running IDE.
-func openInRunningIDE(projectDir string) error {
-	uri := fmt.Sprintf("jetbrains://idea/navigate/reference?project=%s", url.QueryEscape(projectDir))
-	cmd := exec.Command("xdg-open", uri)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("xdg-open jetbrains:// URI: %w", err)
+// cleanSnapEnv returns a copy of the current environment with snap-specific
+// variables removed so that child processes see standard XDG paths.
+func cleanSnapEnv() []string {
+	snapVars := map[string]bool{
+		"SNAP": true, "SNAP_REVISION": true, "SNAP_ARCH": true,
+		"SNAP_INSTANCE_NAME": true, "SNAP_INSTANCE_KEY": true,
+		"SNAP_USER_DATA": true, "SNAP_USER_COMMON": true,
+		"SNAP_COMMON": true, "SNAP_CONTEXT": true,
+		"SNAP_REAL_HOME": true, "SNAP_REEXEC": true,
+		"SNAP_EUID": true, "SNAP_UID": true,
+		"SNAP_LAUNCHER_ARCH_TRIPLET": true,
+		"XDG_CACHE_HOME": true, "XDG_DATA_HOME": true,
+		"XDG_CONFIG_HOME": true, "XDG_STATE_HOME": true,
 	}
-	return nil
+	var env []string
+	for _, e := range os.Environ() {
+		key := e[:strings.IndexByte(e, '=')]
+		if !snapVars[key] {
+			env = append(env, e)
+		}
+	}
+	return env
 }
 
 // findAnyIDEProcess searches /proc for any running IntelliJ IDEA JVM process.
@@ -80,12 +83,18 @@ func findAnyIDEProcess() int {
 		}
 
 		args := string(cmdline)
-		if strings.Contains(args, "com.intellij.idea.Main") {
+		if strings.Contains(args, "com.intellij.idea.Main") || isIDEABinary(args) {
 			return pid
 		}
 	}
 
 	return 0
+}
+
+// isIDEABinary checks if the cmdline looks like the IntelliJ IDEA native
+// launcher installed by JetBrains Toolbox (e.g. .../intellij-idea-ultimate/bin/idea).
+func isIDEABinary(cmdline string) bool {
+	return strings.Contains(cmdline, "intellij-idea") && strings.HasSuffix(strings.SplitN(cmdline, "\x00", 2)[0], "/bin/idea")
 }
 
 // IsIDEAlive checks whether an IDEA instance is running for the given
