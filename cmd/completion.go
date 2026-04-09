@@ -33,13 +33,23 @@ __agh_fzf_complete() {
                 features=$(__agh_fzf_list_features)
                 [[ -z "$features" ]] && { __start_agh; return; }
                 query="${COMP_WORDS[$cword]}"
-                selected=$(echo "$features" | fzf \
-                    --height=40% --reverse --ansi \
-                    --preview 'agh status {} 2>/dev/null' \
-                    --preview-window 'right:50%:wrap' \
+                local fzf_opts=(--reverse --ansi
+                    --preview 'agh status {} 2>/dev/null'
+                    --preview-window 'right:50%:wrap'
                     --query "$query")
+                # Use tmux popup when available for a compact picker
+                if [[ -n "$TMUX" ]]; then
+                    fzf_opts+=(--tmux center,60%,40%)
+                fi
+                selected=$(echo "$features" | fzf "${fzf_opts[@]}")
                 if [[ -n "$selected" ]]; then
                     COMPREPLY=("$selected")
+                    # Disable default file completion for this invocation
+                    [[ $(type -t compopt) = "builtin" ]] && compopt +o default
+                    # Send Device Status Report to force readline to redraw
+                    # the prompt after fzf's TUI has overwritten it.
+                    # This is the same trick fzf's own bash integration uses.
+                    printf '\e[5n'
                     return
                 fi
             fi
@@ -56,6 +66,13 @@ if [[ $(type -t compopt) = "builtin" ]]; then
 else
     complete -o default -o nospace -F __agh_fzf_complete agh
 fi
+
+# Disable file completion for feature-name positions after fzf returns.
+__agh_fzf_nospace() {
+    if [[ $(type -t compopt) = "builtin" ]]; then
+        compopt +o default
+    fi
+}
 
 fi # end fzf guard
 `
